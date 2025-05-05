@@ -1,0 +1,18 @@
+{
+  "Username": "user@example.com",
+  "Password": "your-password-here",
+  "Authority": "https://adfs.example.com",
+  "ClientId": "your-client-id",
+  "RedirectUri": "https://app.example.com/redirect",
+  "Scope": "openid offline_access",
+  "Headless": true,
+  "SlowMo": 50,
+  "Timeout": 300000,
+  "OutputFile": "tokens.json",
+  "TokenCacheFile": "adfs_token_cache.json",
+  "Screenshots": {
+    "Enabled": true,
+    "Directory": "screenshots",
+    "Prefix": "auth_"
+  }
+}

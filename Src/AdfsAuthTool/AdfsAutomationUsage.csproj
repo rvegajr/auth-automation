@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    
+    <!-- Global tool settings -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>adfs-auth</ToolCommandName>
+    <PackageOutputPath>./nupkg</PackageOutputPath>
+    <PackageId>AdfsAuthTool</PackageId>
+    <Version>1.0.1</Version>
+    <Authors>Noctusoft</Authors>
+    <Company>Allied Pilots Association</Company>
+    <Description>Command-line tool for ADFS authentication using browser automation</Description>
+    <PackageTags>adfs;authentication;oauth;openid-connect;playwright;cli</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/noctusoft/auth-automation</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AdfsAuth\AdfsAuth.csproj" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.4" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="9.0.4" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.4" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.4" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.4" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.4" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.4" />
+    <PackageReference Include="Microsoft.Extensions.Primitives" Version="9.0.4" />
+    <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
+    <PackageReference Include="System.Text.Json" Version="9.0.4" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <None Include="node\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="cleanup_node_files.sh" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="parameters-template.json" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="contentFiles/any/any/;content/;tools/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+    <None Include="../../icon.png" Pack="true" PackagePath="/" />
+    <None Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include=".parameters.example" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="GLOBAL_TOOL_README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+</Project>

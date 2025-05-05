@@ -1,0 +1,8 @@
+{
+  "Authority": "https://test-adfs.example.com/adfs/",
+  "ClientId": "test-client-id",
+  "RedirectUri": "https://test-app.example.com/redirect",
+  "Scope": "openid profile email offline_access",
+  "Username": "test-user",
+  "Password": "test-password"
+}

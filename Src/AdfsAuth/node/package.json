@@ -1,0 +1,12 @@
+{
+  "name": "adfs-auth-automation",
+  "version": "1.0.0",
+  "description": "ADFS Authentication Automation using Puppeteer",
+  "main": "adfs-auth.js",
+  "scripts": {
+    "start": "node adfs-auth.js"
+  },
+  "dependencies": {
+    "puppeteer": "^20.1.0"
+  }
+}
