@@ -34,12 +34,28 @@ function buildAuthorizationUrl(config, state, nonce) {
     authority = 'https://' + authority;
   }
   
-  // Remove trailing slash if present
-  if (authority.endsWith('/')) {
-    authority = authority.slice(0, -1);
-  }
+  console.log(`Original authority URL: ${authority}`);
   
-  const url = new URL(`${authority}/adfs/oauth2/authorize/`);
+  // We need to ensure we have the correct URL structure for ADFS
+  // The correct URL should be like: https://auth.integ.alliedpilots.org/adfs/oauth2/authorize/
+  
+  // First check if authority already ends with /adfs/ (from .parameters file)
+  let authUrl;
+  if (authority.toLowerCase().endsWith('/adfs/')) {
+    // Authority already has /adfs/ at the end, so just add oauth2/authorize/
+    authUrl = `${authority}oauth2/authorize/`;
+  } else if (authority.toLowerCase().includes('/adfs')) {
+    // Has /adfs somewhere but not at the end in the correct format
+    // Extract the base URL and reconstruct
+    const baseUrl = authority.substring(0, authority.toLowerCase().indexOf('/adfs'));
+    authUrl = `${baseUrl}/adfs/oauth2/authorize/`;
+  } else {
+    // No /adfs in the URL, add it
+    authUrl = `${authority}/adfs/oauth2/authorize/`;
+  }
+  console.log(`Constructed auth URL: ${authUrl}`);
+  
+  const url = new URL(authUrl);
   
   // Make sure clientId is set
   const clientId = config.clientId || 'https://sentinel.alliedpilots.org';
@@ -204,20 +220,17 @@ async function authenticate(config) {
             console.log(`Request: ${request.method()} ${request.url()}`);
         });
         
-        // Build the authorization URL
-        const authUrl = new URL(`${config.authority}/adfs/oauth2/authorize/`);
-        authUrl.searchParams.append('client_id', config.clientId);
-        authUrl.searchParams.append('redirect_uri', config.redirectUri);
-        authUrl.searchParams.append('response_type', 'id_token token');
-        authUrl.searchParams.append('scope', config.scope || 'openid offline_access');
-        authUrl.searchParams.append('nonce', generateRandomString(16));
-        authUrl.searchParams.append('state', generateRandomString(16));
-        authUrl.searchParams.append('prompt', 'select_account');
+        // Build the authorization URL using our helper function
+        // which properly handles authority URLs that may already contain /adfs/
+        // and adds all required parameters
+        const state = generateRandomString(16);
+        const nonce = generateRandomString(16);
+        const authUrlString = buildAuthorizationUrl(config, state, nonce);
         
-        console.log(`Navigating to ADFS login page: ${authUrl.toString()}`);
+        console.log(`Navigating to ADFS login page: ${authUrlString}`);
         
         // Navigate to the ADFS login page
-        await page.goto(authUrl.toString(), { waitUntil: 'networkidle2' });
+        await page.goto(authUrlString, { waitUntil: 'networkidle2' });
         
         // Take screenshot if enabled
         if (config.screenshots && config.screenshots.enabled) {
@@ -304,72 +317,6 @@ async function authenticate(config) {
                 if (config.outputFile) {
                     const result = {
                         success: true,
-                        tokens: authTokens
-                    };
-                    
-                    fs.writeFileSync(config.outputFile, JSON.stringify(result, null, 2));
-                    console.log(`Tokens written to ${config.outputFile}`);
-                }
-                
-                return {
-                    success: true,
-                    tokens: authTokens
-                };
-            }
-            
-            // Check if we're at the redirect URI
-            const currentUrl = page.url();
-            console.log(`Current URL after navigation: ${currentUrl}`);
-            
-            if (currentUrl.startsWith(config.redirectUri)) {
-                // We're at the redirect URI, but no tokens were captured
-                // Try to extract tokens from the URL
-                if (currentUrl.includes('#')) {
-                    const hashParams = new URLSearchParams(new URL(currentUrl).hash.substring(1));
-                    
-                    const tokens = {
-                        idToken: hashParams.get('id_token'),
-                        accessToken: hashParams.get('access_token'),
-                        tokenType: hashParams.get('token_type'),
-                        expiresIn: hashParams.get('expires_in'),
-                        scope: hashParams.get('scope'),
-                        state: hashParams.get('state')
-                    };
-                    
-                    // Write tokens to output file if specified
-                    if (config.outputFile) {
-                        const result = {
-                            success: true,
-                            tokens: tokens
-                        };
-                        
-                        fs.writeFileSync(config.outputFile, JSON.stringify(result, null, 2));
-                        console.log(`Tokens written to ${config.outputFile}`);
-                    }
-                    
-                    return {
-                        success: true,
-                        tokens: tokens
-                    };
-                } else {
-                    return {
-                        success: false,
-                        error: 'No tokens found',
-                        errorDescription: `Redirected to ${config.redirectUri} but no tokens were found in the URL`
-                    };
-                }
-            } else {
-                // We're not at the redirect URI
-                return {
-                    success: false,
-                    error: 'Unexpected redirect',
-                    errorDescription: `Expected redirect to ${config.redirectUri} but got ${currentUrl}`
-                };
-            }
-        } catch (error) {
-            console.log(`Error waiting for redirect: ${error.message}`);
-            
-            // Even if we timed out waiting for the redirect, we might still have captured tokens
             if (authTokens) {
                 console.log('Authentication successful despite redirect timeout, tokens captured from URL');
                 

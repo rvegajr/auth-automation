@@ -20,7 +20,8 @@
     <RepositoryUrl>https://github.com/noctusoft/auth-automation</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageIcon>icon.png</PackageIcon>
+    <!-- Temporarily removing icon reference -->
+    <!-- <PackageIcon>icon.png</PackageIcon> -->
   </PropertyGroup>
 
   <ItemGroup>
@@ -45,7 +46,8 @@
 
   <ItemGroup>
     <None Include="../../README.md" Pack="true" PackagePath="/" />
-    <None Include="../../icon.png" Pack="true" PackagePath="/" />
+    <!-- Temporarily removing icon reference -->
+    <!-- <None Include="../../icon.png" Pack="true" PackagePath="/" /> -->
     <None Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include=".parameters.example" CopyToOutputDirectory="PreserveNewest" />
     <None Include="GLOBAL_TOOL_README.md" Pack="true" PackagePath="/" />

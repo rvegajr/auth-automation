@@ -166,6 +166,18 @@ namespace AdfsAuth
         /// </summary>
         [JsonPropertyName("idToken")]
         public string? IdToken { get; set; }
+        
+        /// <summary>
+        /// The final URL after all redirects.
+        /// </summary>
+        [JsonPropertyName("finalUrl")]
+        public string? FinalUrl { get; set; }
+        
+        /// <summary>
+        /// Tokens returned from the authentication process.
+        /// </summary>
+        [JsonPropertyName("tokens")]
+        public TokensResult? Tokens { get; set; }
 
         /// <summary>
         /// The error message, if authentication failed.
@@ -184,5 +196,47 @@ namespace AdfsAuth
         /// </summary>
         [JsonPropertyName("timestamp")]
         public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+    }
+    
+    /// <summary>
+    /// Represents the tokens returned from the authentication process.
+    /// </summary>
+    public class TokensResult
+    {
+        /// <summary>
+        /// The access token for API calls.
+        /// </summary>
+        [JsonPropertyName("accessToken")]
+        public string? AccessToken { get; set; }
+        
+        /// <summary>
+        /// The ID token containing user claims.
+        /// </summary>
+        [JsonPropertyName("idToken")]
+        public string? IdToken { get; set; }
+        
+        /// <summary>
+        /// The token type (usually "Bearer").
+        /// </summary>
+        [JsonPropertyName("tokenType")]
+        public string? TokenType { get; set; }
+        
+        /// <summary>
+        /// The token expiration time in seconds.
+        /// </summary>
+        [JsonPropertyName("expiresIn")]
+        public string? ExpiresIn { get; set; }
+        
+        /// <summary>
+        /// The scopes granted by the token.
+        /// </summary>
+        [JsonPropertyName("scope")]
+        public string? Scope { get; set; }
+        
+        /// <summary>
+        /// The state parameter used in the authentication request.
+        /// </summary>
+        [JsonPropertyName("state")]
+        public string? State { get; set; }
     }
 }

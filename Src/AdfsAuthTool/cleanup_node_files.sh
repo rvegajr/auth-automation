@@ -21,6 +21,9 @@ fi
 # Clean up any existing node processes
 echo "Checking for running node processes..."
 NODE_PIDS=$(pgrep -f "node.*adfs-auth")
+CHROME_PIDS=$(pgrep -f "[c]hrome.*puppeteer")
+PUPPETEER_PIDS=$(pgrep -f "puppeteer")
+
 if [ -n "$NODE_PIDS" ]; then
     echo "Found running node processes. Killing them..."
     echo $NODE_PIDS | xargs kill -9
@@ -28,6 +31,22 @@ if [ -n "$NODE_PIDS" ]; then
 else
     echo "No running node processes found."
 fi
+
+# Kill any Chrome processes started by Puppeteer
+if [ -n "$CHROME_PIDS" ]; then
+    echo "Found Chrome processes from Puppeteer. Killing them..."
+    echo $CHROME_PIDS | xargs kill -9
+    echo "Chrome processes killed."
+fi
+
+if [ -n "$PUPPETEER_PIDS" ]; then
+    echo "Found Puppeteer processes. Killing them..."
+    echo $PUPPETEER_PIDS | xargs kill -9
+    echo "Puppeteer processes killed."
+fi
+
+# Force wait a moment to ensure processes are terminated
+sleep 1
 
 # Remove any existing node files
 echo "Removing existing node files..."

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using AdfsAuth;
@@ -195,19 +196,62 @@ namespace AdfsAutomationUsage
                 // Create the config file
                 var configPath = Path.Combine(nodeDir, "config.json");
                 var config = CreateNodeConfig();
-                await File.WriteAllTextAsync(configPath, JsonSerializer.Serialize(config, new JsonSerializerOptions
+                
+                // Check if we need to prompt for credentials
+                if (!config.ContainsKey("username") || !config.ContainsKey("password"))
+                {
+                    Console.WriteLine("Credentials not found in environment variables or configuration file.");
+                    
+                    if (!config.ContainsKey("username"))
+                    {
+                        Console.Write("Enter username: ");
+                        var username = Console.ReadLine();
+                        if (!string.IsNullOrEmpty(username))
+                        {
+                            config["username"] = username;
+                        }
+                    }
+                    
+                    if (!config.ContainsKey("password"))
+                    {
+                        Console.Write("Enter password: ");
+                        var password = ReadPassword();
+                        if (!string.IsNullOrEmpty(password))
+                        {
+                            config["password"] = password;
+                        }
+                    }
+                }
+                
+                // Create a sanitized copy of the config for writing to file
+                // This removes sensitive information (password) before writing to disk
+                var configForFile = new Dictionary<string, object>(config);
+                if (configForFile.ContainsKey("password"))
+                {
+                    configForFile["password"] = "***REDACTED***";
+                }
+                
+                // Write sanitized config to disk for debugging
+                await File.WriteAllTextAsync(configPath, JsonSerializer.Serialize(configForFile, new JsonSerializerOptions
+                {
+                    WriteIndented = true
+                }));
+                
+                // Create a temporary config file with the actual credentials (will be deleted after use)
+                var tempConfigPath = Path.Combine(nodeDir, "config.temp.json");
+                await File.WriteAllTextAsync(tempConfigPath, JsonSerializer.Serialize(config, new JsonSerializerOptions
                 {
                     WriteIndented = true
                 }));
 
-                // Run the node script
+                // Run the node script with the temporary config that contains actual credentials
                 var scriptPath = Path.Combine(nodeDir, "adfs-auth-cli.js");
                 Console.WriteLine($"Running Node.js script: {scriptPath}");
 
                 var processStartInfo = new ProcessStartInfo
                 {
                     FileName = "node",
-                    Arguments = $"\"{scriptPath}\" \"{configPath}\"",
+                    Arguments = $"\"{scriptPath}\" \"{tempConfigPath}\"",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
@@ -264,6 +308,19 @@ namespace AdfsAutomationUsage
                 // Wait for the process to exit
                 await process.WaitForExitAsync();
                 
+                // Clean up the temporary config file with real credentials
+                try
+                {
+                    if (File.Exists(tempConfigPath))
+                    {
+                        File.Delete(tempConfigPath);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Warning: Failed to delete temporary config file: {ex.Message}");
+                }
+                
                 // Get the output
                 string output = File.Exists(_options.Value.OutputFile) 
                     ? await File.ReadAllTextAsync(_options.Value.OutputFile) 
@@ -286,9 +343,37 @@ namespace AdfsAutomationUsage
                     if (File.Exists(_options.Value.OutputFile))
                     {
                         var result = JsonSerializer.Deserialize<AdfsAuthResult>(output);
-                        if (result != null && result.Success)
+                        if (result != null)
                         {
-                            return result;
+                            // Check if we got tokens even in an error case
+                            if (result.Success)
+                            {
+                                Console.WriteLine("✅ Authentication successful!");
+                                return result;
+                            }
+                            else if (result.Tokens != null && result.Tokens.AccessToken != null)
+                            {
+                                // We have tokens but possibly an authorization issue
+                                if (result.Error == "Unauthorized access" || 
+                                    (result.FinalUrl != null && result.FinalUrl.Contains("/login/unauthorized")))
+                                {
+                                    Console.WriteLine("⚠️ Authentication successful but user is not authorized for this application");
+                                    Console.WriteLine("Tokens were captured and can be used for API calls");
+                                    
+                                    // Override success to true since we have tokens
+                                    result.Success = true;
+                                    return result;
+                                }
+                                return result;
+                            }
+                            else
+                            {
+                                // Regular error case
+                                Console.WriteLine($"❌ Authentication failed!");
+                                Console.WriteLine($"Error: {result.Error}");
+                                Console.WriteLine($"Description: {result.ErrorDescription}");
+                                return result;
+                            }
                         }
                     }
                     
@@ -394,6 +479,8 @@ namespace AdfsAutomationUsage
                         {
                             process.WaitForExit();
                             if (_verbose) Console.WriteLine($"Cleanup script exited with code: {process.ExitCode}");
+                            // Add a small delay after cleanup to ensure processes are fully terminated
+                            Task.Delay(1000).Wait();
                         }
                     }
                     catch (Exception ex)
@@ -411,50 +498,49 @@ namespace AdfsAutomationUsage
                 var assemblyDir = Path.GetDirectoryName(assemblyLocation) ?? throw new InvalidOperationException("Could not determine assembly directory");
                 var sourceNodeDir = Path.Combine(assemblyDir, "node");
 
-                // Copy the node scripts to the output directory
+                // Ensure the destination directory exists
+                Directory.CreateDirectory(nodeDir);
+                
+                // Copy the node scripts to the output directory - use a timestamp-based approach for all files
                 if (Directory.Exists(sourceNodeDir))
                 {
+                    // Generate a timestamp suffix for this run to ensure uniqueness
+                    var timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
+                    var filesCopied = new Dictionary<string, string>(); // Track original name to new name
+                    
                     foreach (var file in Directory.GetFiles(sourceNodeDir))
                     {
                         try
                         {
                             var fileName = Path.GetFileName(file);
-                            var destFile = Path.Combine(nodeDir, fileName);
-
-                            // Check if file exists and try to release it
-                            if (File.Exists(destFile))
+                            var fileNameWithoutExt = Path.GetFileNameWithoutExtension(file);
+                            var fileExt = Path.GetExtension(file);
+                            
+                            // Always use a unique filename with timestamp to avoid locking issues
+                            var uniqueFileName = $"{fileNameWithoutExt}_{timestamp}{fileExt}";
+                            var destFile = Path.Combine(nodeDir, uniqueFileName);
+                            
+                            // Remember the mapping from original to new filename
+                            filesCopied[fileName] = uniqueFileName;
+                            
+                            // Copy the file - with a generous retry mechanism
+                            for (int attempt = 1; attempt <= 5; attempt++)
                             {
                                 try
                                 {
-                                    // Try to open and close the file to check if it's locked
-                                    using (var fs = new FileStream(destFile, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
-                                    {
-                                        // File is not locked, we can close it
-                                    }
-                                }
-                                catch (IOException)
-                                {
-                                    // File is locked, let's try to use a different filename
-                                    if (_verbose) Console.WriteLine($"File {fileName} is in use. Using a unique filename.");
-                                    destFile = Path.Combine(nodeDir, $"{Path.GetFileNameWithoutExtension(fileName)}_{Guid.NewGuid().ToString("N").Substring(0, 8)}{Path.GetExtension(fileName)}");
-                                }
-                            }
-
-                            // Copy with retry logic
-                            int retries = 3;
-                            while (retries > 0)
-                            {
-                                try
-                                {
-                                    File.Copy(file, destFile, true);
-                                    if (_verbose) Console.WriteLine($"Copied {fileName} to {destFile}");
+                                    // Use File.ReadAllBytes/WriteAllBytes which can sometimes avoid locking issues
+                                    byte[] fileContents = File.ReadAllBytes(file);
+                                    File.WriteAllBytes(destFile, fileContents);
+                                    
+                                    if (_verbose) Console.WriteLine($"Copied {fileName} to {destFile} (attempt {attempt})");
                                     break;
                                 }
-                                catch (IOException ex) when (retries > 1)
+                                catch (IOException ex) when (attempt < 5)
                                 {
-                                    Console.WriteLine($"Failed to copy {fileName}: {ex.Message}. Retrying...");
-                                    retries--;
-                                    Task.Delay(500).Wait(); // Wait a bit before retrying
+                                    Console.WriteLine($"Failed to copy {fileName}: {ex.Message}. Attempt {attempt} of 5.");
+                                    // Try a different filename for the next attempt
+                                    destFile = Path.Combine(nodeDir, $"{fileNameWithoutExt}_{timestamp}_{attempt}{fileExt}");
+                                    Task.Delay(1000).Wait(); // Wait longer between retries
                                 }
                             }
                         }
@@ -466,6 +552,18 @@ namespace AdfsAutomationUsage
                                 Console.WriteLine($"Stack trace: {ex.StackTrace}");
                             }
                         }
+                    }
+                    
+                    // Create a special file mapping.json to help the Node script find its dependencies
+                    try 
+                    {
+                        var mappingFile = Path.Combine(nodeDir, "file_mapping.json");
+                        File.WriteAllText(mappingFile, System.Text.Json.JsonSerializer.Serialize(filesCopied, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+                        if (_verbose) Console.WriteLine($"Created file mapping at {mappingFile}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error creating file mapping: {ex.Message}");
                     }
                 }
                 else
@@ -557,7 +655,23 @@ namespace AdfsAutomationUsage
                 { "debug", _verbose }
             };
             
-            // Try to load configuration from the JSON file first
+            // First check environment variables for credentials
+            var envUsername = Environment.GetEnvironmentVariable("ADFS_AUTH_USERNAME");
+            var envPassword = Environment.GetEnvironmentVariable("ADFS_AUTH_PASSWORD");
+            
+            if (!string.IsNullOrEmpty(envUsername))
+            {
+                configDict["username"] = envUsername;
+                Console.WriteLine("Username loaded from environment variable");
+            }
+            
+            if (!string.IsNullOrEmpty(envPassword))
+            {
+                configDict["password"] = envPassword;
+                Console.WriteLine("Password loaded from environment variable");
+            }
+            
+            // Then try to load configuration from the JSON file
             var credentialsFile = _options.Value.CredentialsJsonFile;
             if (!string.IsNullOrEmpty(credentialsFile) && File.Exists(credentialsFile))
             {
@@ -569,26 +683,28 @@ namespace AdfsAutomationUsage
                     
                     if (parametersDict != null)
                     {
-                        // Process credentials
-                        if (parametersDict.TryGetValue("Username", out var usernameElement) || 
-                            parametersDict.TryGetValue("username", out usernameElement))
+                        // Only load username/password from file if not already set from environment variables
+                        if (!configDict.ContainsKey("username") && 
+                            (parametersDict.TryGetValue("Username", out var usernameElement) || 
+                             parametersDict.TryGetValue("username", out usernameElement)))
                         {
                             var username = usernameElement.GetString();
                             if (!string.IsNullOrEmpty(username))
                             {
                                 configDict["username"] = username;
-                                Console.WriteLine($"Username loaded: {username}");
+                                Console.WriteLine("Username loaded from configuration file");
                             }
                         }
                         
-                        if (parametersDict.TryGetValue("Password", out var passwordElement) || 
-                            parametersDict.TryGetValue("password", out passwordElement))
+                        if (!configDict.ContainsKey("password") && 
+                            (parametersDict.TryGetValue("Password", out var passwordElement) || 
+                             parametersDict.TryGetValue("password", out passwordElement)))
                         {
                             var password = passwordElement.GetString();
                             if (!string.IsNullOrEmpty(password))
                             {
                                 configDict["password"] = password;
-                                Console.WriteLine("Password loaded");
+                                Console.WriteLine("Password loaded from configuration file");
                             }
                         }
                         
@@ -753,6 +869,40 @@ namespace AdfsAutomationUsage
                     }
                 }
             }
+        }
+        
+        /// <summary>
+        /// Securely reads a password from the console without displaying the characters.
+        /// </summary>
+        /// <returns>The password entered by the user</returns>
+        private string ReadPassword()
+        {
+            var password = new StringBuilder();
+            ConsoleKeyInfo key;
+            
+            do {
+                key = Console.ReadKey(true); // true means do not display the character
+                
+                // Only add the key if it's not a control character (like Enter)
+                if (key.Key != ConsoleKey.Enter)
+                {
+                    if (key.Key == ConsoleKey.Backspace && password.Length > 0)
+                    {
+                        // Handle backspace - remove the last character
+                        password.Remove(password.Length - 1, 1);
+                        Console.Write("\b \b"); // Erase the character from the console
+                    }
+                    else if (!char.IsControl(key.KeyChar))
+                    {
+                        // Add the character to the password and display a mask character
+                        password.Append(key.KeyChar);
+                        Console.Write("*");
+                    }
+                }
+            } while (key.Key != ConsoleKey.Enter);
+            
+            Console.WriteLine(); // Move to the next line after Enter is pressed
+            return password.ToString();
         }
     }
 }
